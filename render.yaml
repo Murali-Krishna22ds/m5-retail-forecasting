@@ -1,0 +1,7 @@
+# One-click deploy on Render.com (free tier): New + > Blueprint > pick this repo.
+services:
+  - type: web
+    name: m5-forecast-dashboard
+    runtime: docker
+    plan: free
+    healthCheckPath: /

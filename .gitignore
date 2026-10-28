@@ -1,0 +1,9 @@
+data/raw/
+data/processed/
+results/tft_ckpt/
+results/models/
+results/*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/

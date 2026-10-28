@@ -1,0 +1,20 @@
+# Tested with Python 3.12. On CPU-only machines install torch from https://download.pytorch.org/whl/cpu first.
+numpy
+pandas
+pyarrow
+scipy
+scikit-learn
+matplotlib
+tqdm
+pyyaml
+lightgbm
+prophet
+darts
+torch
+lightning
+pytorch-forecasting
+ortools
+plotly
+dash
+gunicorn
+pytest
