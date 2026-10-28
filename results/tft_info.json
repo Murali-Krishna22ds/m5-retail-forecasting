@@ -1,0 +1,1 @@
+{"seconds": 704.6950395107269, "metrics": {"train_loss": 0.5604292154312134, "train_loss_step": 0.5579932332038879, "val_loss": 0.5796017646789551, "val_SMAPE": 1.288327693939209, "val_MAE": 1.3036222457885742, "val_RMSE": 2.578141212463379, "val_MAPE": 30011108.0, "train_loss_epoch": 0.5604292154312134}, "epochs": 10, "batches_per_epoch": 400}
