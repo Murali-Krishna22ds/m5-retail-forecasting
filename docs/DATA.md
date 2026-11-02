@@ -32,6 +32,13 @@ All 10 stores/3 states are kept, so the Total > State > Store reconciliation is 
 | calibration | `d_1886 .. d_1913` (28 d) | early stopping, MinT residual weights, copula correlation, conformal check |
 | **test** | `d_1914 .. d_1941` (28 d, 2016-04-25 .. 2016-05-22) | all reported numbers; never used for fitting or tuning |
 
+### Provenance check against the official Kaggle download
+`python scripts/verify_against_kaggle.py <folder with Kaggle files>` was run against the team's original Kaggle archive
+(`m5-forecasting-accuracy.zip`, March 2020 release): sales for all 400 series over d_1..d_1913, calendar dates/events and all
+87,867 price rows used are **identical** to the mirror. That Kaggle release stops at d_1913 (the last 28 days were released
+later as `sales_train_evaluation.csv`), so the **test window d1914-d1941 comes from the evaluation release** (mirror). To
+reproduce with the original files only, shift `LAST_TRAIN_D / CAL / TEST` in `config.py` back by 28 days.
+
 ## 2. Processed artefacts (`data/processed/`, git-ignored, rebuilt by `make data features`)
 | file | content |
 |---|---|
