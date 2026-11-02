@@ -34,7 +34,7 @@ Revenue-weighted item-store WRMSSE: Naive 1.084, Seasonal naive 0.974, Prophet 0
 |---|---|---|---|---|---|
 | Naive | 0.484 | 0.610 | 0.676 | 2.771 | 1.084 |
 | Seasonal naive | 0.317 | 0.779 | 0.861 | 3.482 | 0.974 |
-| Prophet | 0.254 | 0.761 | 0.892 | 3.783 | 0.813 |
+| Prophet | 0.255 | 0.761 | 0.887 | 3.781 | 0.813 |
 | LightGBM (base) | 0.210 | 0.821 | 0.969 | 4.260 | 0.740 |
 | LightGBM+MinT | 0.210 | 0.821 | 0.969 | 4.260 | 0.741 |
 | TFT | 0.231 | 0.469 | 0.563 | 3.637 | 0.753 |
@@ -85,10 +85,10 @@ Copula correlation chosen on the calibration window: rho = 0.2 (80%-interval cov
 | LightGBM + MinT | milp | 6087.385 | 0.788 | 0.354 | 307.154 | 44262.476 |
 | LightGBM + MinT | oracle | 448.611 | 1.000 | 0.000 | 186.921 | 52511.374 |
 | LightGBM + MinT | safety | 10594.045 | 0.624 | 0.599 | 176.667 | 34588.722 |
-| Prophet | mean | 12176.495 | 0.557 | 0.636 | 190.979 | 31869.131 |
-| Prophet | milp | 7105.061 | 0.749 | 0.354 | 372.404 | 43792.482 |
+| Prophet | mean | 12460.357 | 0.545 | 0.655 | 171.960 | 31239.124 |
+| Prophet | milp | 7126.596 | 0.749 | 0.355 | 369.378 | 43751.413 |
 | Prophet | oracle | 448.611 | 1.000 | 0.000 | 186.921 | 52511.374 |
-| Prophet | safety | 11158.897 | 0.594 | 0.573 | 223.047 | 34383.510 |
+| Prophet | safety | 11192.437 | 0.591 | 0.579 | 217.930 | 34310.570 |
 | Seasonal naive | mean | 8928.408 | 0.671 | 0.439 | 264.708 | 38699.346 |
 | Seasonal naive | milp | 6895.406 | 0.755 | 0.272 | 495.839 | 45925.284 |
 | Seasonal naive | oracle | 448.611 | 1.000 | 0.000 | 186.921 | 52511.374 |
@@ -120,4 +120,4 @@ Budget sensitivity (LightGBM+MinT scenarios):
 
 ## 7. Training details
 * LightGBM: bottom model best iteration 513 (early-stopped on calibration window), aggregate model 80; quantile heads 5 x <=350 trees.
-* TFT: 10 epochs x 400 batches, 705 s on 1 CPU, 33.8k parameters.
+* TFT: 10 epochs x 400 batches, 672 s on 1 CPU, 33.8k parameters.

@@ -25,7 +25,7 @@ Full tables, bootstrap CIs, per-segment WAPE (smooth / intermittent / sparse) an
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt            # CPU-only torch: pip install torch --index-url https://download.pytorch.org/whl/cpu
-make download                              # real M5 from the Nixtla GitHub mirror (or put Kaggle files in data/raw/)
+# put the official Kaggle files in data/raw/ (calendar.csv, sell_prices.csv, sales_train_evaluation.csv), or: make download (Nixtla mirror)
 make all                                   # data -> features -> baselines -> lgbm -> tft -> reconcile -> eval -> optimize -> report -> test
 make app                                   # http://127.0.0.1:8050
 ```
@@ -44,7 +44,7 @@ Four tabs: **Forecasts** (any of 414 nodes, model overlay, 80/95% bands, per-nod
 5. **Optimiser**: demand scenarios from the quantile forecasts via a Gaussian copula (rho = 0.2 chosen on calibration window so 7-day sums are ~80% covered). Expected cost per SKU is convex in packs ordered, so it is linearised exactly with chord constraints -> MILP with 80 variables per store solved by SCIP in ~0.5 s; verified equal to the explicit scenario formulation (`tests/test_optimize.py`).
 
 ## Bugs found by testing (kept in history as commits)
-* NaN `days_to_event` at calendar edges crashed TFT. · Shifting integer-valued interval bounds by reconciliation adjustments dropped coverage 82% -> 64% (fixed: shift aggregates only). · Prophet's 80% and 95% bands came from separate sampling runs and crossed (caught by `test_forecast_shape_finite_nonneg_monotone`). · `hash()`-seeded scenarios made backtests non-reproducible (now CRC32; verified bit-identical). · Dash app crashed when TFT was selected above item level.
+* NaN `days_to_event` at calendar edges crashed TFT. · Shifting integer-valued interval bounds by reconciliation adjustments dropped coverage 82% -> 64% (fixed: shift aggregates only). · Prophet's 80% and 95% bands came from separate sampling runs and crossed (caught by `test_forecast_shape_finite_nonneg_monotone`). · `hash()`-seeded scenarios and unseeded Prophet interval sampling made runs non-reproducible (now CRC32 / fixed seeds; a full from-scratch re-run reproduces every number). · Dash app crashed when TFT was selected above item level.
 
 ## Limitations (honest)
 * **Subset**: 40 items x 10 stores (400 of 30,490 series) because of the 1-CPU/3 GB build machine; items were sampled across the volume range, not randomly from all of M5, so absolute scores are **not comparable to the Kaggle leaderboard**. Single 28-day test window, no rolling-origin CV.

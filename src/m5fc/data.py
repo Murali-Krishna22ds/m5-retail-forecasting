@@ -34,7 +34,10 @@ def build_subset(force: bool = False) -> pd.DataFrame:
     long = sales.melt(id_vars=ID_COLS, value_vars=dcols, var_name="d", value_name="sales")
     long["d"] = long["d"].str[2:].astype("int16")
     cal = pd.read_csv(RAW / "calendar.csv")
-    cal["d"] = np.arange(1, len(cal) + 1).astype("int16")  # mirror has no `d` column; row i == d_i
+    if "d" in cal.columns:                       # official Kaggle layout: d = "d_123"
+        cal["d"] = cal["d"].str[2:].astype("int16")
+    else:                                         # Nixtla mirror has no `d` column; row i == d_i
+        cal["d"] = np.arange(1, len(cal) + 1).astype("int16")
     cal["date"] = pd.to_datetime(cal["date"])
     long = long.merge(cal[["d", "date", "wm_yr_wk", "wday", "month", "year", "event_name_1",
                            "event_type_1", "snap_CA", "snap_TX", "snap_WI"]], on="d", how="left")

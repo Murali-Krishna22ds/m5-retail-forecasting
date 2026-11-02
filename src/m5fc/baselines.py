@@ -46,9 +46,11 @@ def _prophet_one(y: pd.Series, dates: pd.Series, extra: pd.DataFrame, holidays, 
         train[c] = extra.loc[:origin, c].values; fut[c] = extra.loc[origin + 1: origin + h, c].values
         m.add_regressor(c)
     m.fit(train)
+    np.random.seed(0)                       # Prophet's interval sampling uses the global numpy RNG -> make runs reproducible
     p80 = m.predict(fut)
     m.interval_width = 0.95
     m.uncertainty_samples = 200
+    np.random.seed(1)
     p95 = m.predict(fut)
     return pd.DataFrame({"point": p80.yhat.values, "q0.1": p80.yhat_lower.values, "q0.9": p80.yhat_upper.values,
                          "q0.025": p95.yhat_lower.values, "q0.975": p95.yhat_upper.values,

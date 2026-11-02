@@ -58,7 +58,7 @@ txt(s, [{ text: "Item-store coverage:\n80% interval 0.82\n95% interval 0.97", op
 s = content("Intervals: LightGBM is calibrated, TFT is not", "Results", "Coverage should hit the dashed line. LightGBM is on target. TFT only covers 47 percent for a nominal 80 percent. Conformal recalibration on LightGBM found an adjustment of exactly zero, meaning it was already valid. A first conformal attempt on single aggregate nodes made coverage worse because 28 correlated days is too small a sample, so we restricted it.");
 pic(s, "results/figures/fig3_calibration.png", 0.5, 1.15, 6.0, 2.18);
 txt(s, bullets(["Native quantile heads: 2.5 / 10 / 50 / 90 / 97.5%", "Conformal (CQR) check: adjustment = 0, already valid", "TFT under-covers: 47% vs 80% nominal", "Why we ship LightGBM: better RMSSE, calibrated, coherent aggregates"]), { x: 6.7, y: 1.2, w: 2.9, h: 3.6, fontSize: 13 });
-txt(s, [{ text: "Scaled pinball loss, item level: LightGBM 0.210, TFT 0.231, Prophet 0.254, seasonal naive 0.317", options: {} }], { x: 0.5, y: 3.6, w: 6.0, h: 0.8, fontSize: 13, color: THEME.colors.accent5 });
+txt(s, [{ text: "Scaled pinball loss, item level: LightGBM 0.210, TFT 0.231, Prophet 0.255, seasonal naive 0.317", options: {} }], { x: 0.5, y: 3.6, w: 6.0, h: 0.8, fontSize: 13, color: THEME.colors.accent5 });
 
 // 7 reconciliation
 s = content("Reconciliation makes every level add up, and helps at the top", "Results", "Base forecasts disagreed by up to 80 units between a state and the sum of its stores. After Darts MinT the gap is 1e-13. Be balanced: Total WAPE improves 18 percent, state 4 percent, but store gets 4 percent worse and item 1 percent worse. Top-down is clearly worst. We clip negatives and re-sum so the result is both coherent and non-negative.");
