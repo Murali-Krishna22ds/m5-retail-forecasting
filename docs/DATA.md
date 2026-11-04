@@ -28,6 +28,8 @@ All 10 stores/3 states are kept, so the Total > State > Store reconciliation is 
 ### Time split (no look-ahead anywhere)
 | window | days | use |
 |---|---|---|
+| selection | `d_1858 .. d_1885` (models trained `<= d_1857`) | feature / hyper-parameter search only (`scripts/tune_lgbm.py`) |
+| rolling-origin check | 4 windows d1718-1829 + report-only windows | decide which LightGBM config to keep (`scripts/rolling_origin_lgbm.py`) |
 | train | `d_1 .. d_1885` | fit all models |
 | calibration | `d_1886 .. d_1913` (28 d) | early stopping, MinT residual weights, copula correlation, conformal check |
 | **test** | `d_1914 .. d_1941` (28 d, 2016-04-25 .. 2016-05-22) | all reported numbers; never used for fitting or tuning |
@@ -41,14 +43,15 @@ and the full pipeline reproduces bit-for-bit (LightGBM, TFT, reconciliation, MIL
 | file | content |
 |---|---|
 | `subset.parquet` | tidy long table: `sku, d, date, sales, sell_price, snap, events, ids` (776,400 rows) |
-| `feat_bottom.parquet` | 776,400 x 49 model table for bottom series |
-| `feat_agg.parquet` | 27,174 x 37 model table for Total/State/Store nodes |
+| `feat_bottom.parquet` | 776,400 x 59 model table for bottom series |
+| `feat_agg.parquet` | 27,174 x 40 model table for Total/State/Store nodes |
 | `S_all.parquet` | `1941 x 414` actuals for every hierarchy node |
 
-### Features (all sales-derived features use data `<= t-28`; enforced by `tests/test_features.py`)
+### Features (all sales-derived features use data `<= t-28`; enforced by `tests/test_features.py`, including the cross-series ones)
 `lag_{28,35,42,49,56,91,364}`, `rmean_{7,14,28,56,168}`, `rstd_{7,28}`, `zero_rate_28`, `dow_mean_{4w,8w}`, `trend_ratio`, `rmax_28`;
 known-in-advance: `sell_price, price_ratio` (price / 91-day max), `price_change_wk, price_rel_item, promo` (ratio < 0.97), `snap`,
 `wday, month, dom, woy, is_event, event_type, event_code, days_to_event, days_since_event`; categorical ids for item/dept/cat/store/state.
+Added in the optimised version (+10, adopted by the rolling-origin rule): `ewm_01, ewm_03, days_since_sale`, cross-series context `item_rmean28_xstore, store_rmean28, share_in_store, store_trend`, price context `price_rel_catstore, days_since_price_change, price_vs_min91`.
 Rows where the item has no price (not on sale) are excluded from training and forecast as exactly 0 (M5 convention; verified by `test_no_price_means_no_sales_mostly`).
 
 ## 3. Forecast store (`results/forecasts/<model>.parquet`)
@@ -61,7 +64,7 @@ Long format, one file per model - the single interface between modelling, evalua
 | `point` | point forecast (mean for LGBM/Prophet, median for TFT) |
 | `q0.025 q0.1 q0.5 q0.9 q0.975` | quantile forecasts -> 80% = [q0.1, q0.9], 95% = [q0.025, q0.975]; sorted, non-negative |
 
-Model ids: `naive, snaive, prophet, lgbm` (base, incoherent), `lgbm_bu/_td/_ols/_wlss/_mint` (reconciled), `tft`, `tft_bu`.
+Model ids: `naive, snaive, prophet, lgbm` (base, incoherent), `lgbm_bu/_td/_ols/_wlss/_mint` (reconciled), `lgbm_v1*` (archived previous version, for before/after), `tft`, `tft2`, `tft_avg`, `tft_cqr`, `tft_bu`, `ens_raw` (blend), `ens` (blend + conformal), `ens_mint` (**final**), `ens_bu`.
 
 ## 4. Python API (`src/m5fc`)
 | module | main entry points |
@@ -70,14 +73,15 @@ Model ids: `naive, snaive, prophet, lgbm` (base, incoherent), `lgbm_bu/_td/_ols/
 | `features` | `build_all()` -> `(bottom_table, agg_table, S_all, hierarchy)`, `sales_features(S)` |
 | `metrics` | `wape, rmsse, rmsse_scale, pinball, scaled_pinball, coverage, winkler` |
 | `baselines` | `run_naive(S)`, `run_prophet(...)` |
-| `lgbm` | `run()` (train point+quantile models, write `lgbm`, `lgbm_cqr`), `cqr()` |
+| `lgbm` | `run()` (train point+quantile models using `results/best_params.json`), `cqr()` |
+| `ensemble` | `average`, `blend`, `choose_weight` (calibration window), `scaled_cqr` (conformal recalibration) |
 | `tft` | `run(bt, epochs, batches_per_epoch)` |
 | `reconcile` | `reconcile_model(model, S, h, method, out_name)`, `coherence_error(...)` |
 | `evaluate` | `score(model, ...)`, `score_all(models, ...)` |
 | `optimize` | `item_params`, `cycle_scenarios`, `calibrate_rho`, `solve_store` (fast exact MILP), `solve_store_explicit`, `backtest`, `summarise_backtest` |
 
 ### Command-line pipeline (`Makefile`)
-`make data features baselines lgbm tft reconcile eval optimize report test app`  (or `make all`).
+`make all` = `scripts/run_all.sh`: features, baselines, tune, rolling-origin, decision, lgbm, tft x2, ensemble, reconcile, eval, optimize, report, tests (SKIP_* env vars reuse finished steps).
 
 ## 5. Inventory-model assumptions (all in `config.py` - **not** M5 data, stated explicitly)
 | parameter | value | rationale |

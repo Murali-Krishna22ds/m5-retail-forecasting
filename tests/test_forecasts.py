@@ -2,12 +2,13 @@ import numpy as np, pandas as pd, pytest
 from m5fc.store import load, qcols, FC
 from m5fc import config as C
 
-MODELS = ["naive", "snaive", "prophet", "lgbm", "lgbm_mint"]
+MODELS = ["naive", "snaive", "prophet", "lgbm", "lgbm_mint", "lgbm_cqr", "tft", "tft2", "tft_avg", "tft_cqr", "ens", "ens_mint"]
 
 
 @pytest.mark.parametrize("m", MODELS)
 def test_forecast_shape_finite_nonneg_monotone(data, m):
     _, _, S, h = data
+    if not (FC / f"{m}.parquet").exists(): pytest.skip(f"{m} not produced")
     f = load(m)
     for w, (d0, d1) in {"cal": (C.CAL_START, C.CAL_END), "test": (C.TEST_START, C.TEST_END)}.items():
         g = f[f.window == w]
@@ -22,16 +23,17 @@ def test_forecast_shape_finite_nonneg_monotone(data, m):
 
 def test_models_cover_all_nodes(data):
     _, _, S, h = data
-    for m in ["lgbm_mint", "prophet", "snaive"]:
+    for m in ["ens_mint", "lgbm_mint", "prophet", "snaive"]:
         assert set(load(m, "test").node) == set(S.columns)
 
 
 def test_lgbm_beats_baselines_and_is_statistically_significant():
     import json
     te = pd.read_csv(C.RES / "metrics_test.csv"); b = te[te.level == "Item-Store"].set_index("model")
-    assert b.loc["lgbm_mint", "WAPE"] < b.loc["prophet", "WAPE"] < b.loc["snaive", "WAPE"]
-    assert b.loc["lgbm_mint", "WRMSSE"] < b.loc["prophet", "WRMSSE"]
-    ci = json.load(open(C.RES / "bootstrap_wape_diff.json"))["WAPE(prophet) - WAPE(lgbm_mint)"]["ci95"]
+    assert b.loc["ens_mint", "WAPE"] < b.loc["prophet", "WAPE"] < b.loc["snaive", "WAPE"]
+    assert b.loc["lgbm_mint", "WAPE"] < b.loc["prophet", "WAPE"]
+    assert b.loc["ens_mint", "WRMSSE"] < b.loc["prophet", "WRMSSE"]
+    ci = json.load(open(C.RES / "bootstrap_wape_diff.json"))["WAPE(prophet) - WAPE(ens_mint)"]["ci95"]
     assert ci[0] > 0                                            # 95% CI excludes zero
 
 

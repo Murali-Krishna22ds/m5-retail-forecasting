@@ -31,8 +31,9 @@ def test_order_plan_respects_constraints_and_slider_effects():
     loose, kl = A.plan_store("WI_2", 2, 1.5, 1.5, 1.0, 0)
     assert tight["Order $"].sum() <= res["Order $"].sum() <= loose["Order $"].sum() + 1e-6
     assert kl["exp_fill"] >= kt["exp_fill"]
-    hi, _ = A.plan_store("WI_2", 2, 1.5, 1.5, 3.0, 0)          # higher stockout penalty -> order more
-    assert hi["Order qty"].sum() >= loose["Order qty"].sum()
+    # higher stockout penalty -> order more (shelf capacity relaxed so it cannot be the binding constraint)
+    lo_pen, _ = A.plan_store("WI_2", 2, 3.0, 5.0, 1.0, 0); hi, _ = A.plan_store("WI_2", 2, 3.0, 5.0, 3.0, 0)
+    assert hi["Order qty"].sum() >= lo_pen["Order qty"].sum()
     stocked, _ = A.plan_store("WI_2", 2, 1.5, 1.5, 1.0, 5)       # on-hand stock -> order less
     assert stocked["Order qty"].sum() < loose["Order qty"].sum()
     assert len(A.order_figure(res).data) == 3 and len(A.policy_figure().data) == 1

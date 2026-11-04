@@ -1,0 +1,9 @@
+{
+ "scores_vs_A": {
+  "A_v1": 1.0,
+  "B_tuned": 1.0071349602367563,
+  "C_ext_default": 0.9968429152163749
+ },
+ "chosen": "C_ext_default",
+ "rule": "lowest mean relative score on 4 clean windows (d1718-1829); must beat A by >=0.2%, else keep A"
+}

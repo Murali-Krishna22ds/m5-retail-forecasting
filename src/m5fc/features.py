@@ -28,7 +28,32 @@ def sales_features(S: pd.DataFrame) -> dict[str, pd.DataFrame]:
     f["dow_mean_8w"] = sum(S.shift(k) for k in range(28, 84, 7)) / 8
     f["trend_ratio"] = f["rmean_7"] / (f["rmean_56"] + 1e-3)
     f["rmax_28"] = L.rolling(28, min_periods=7).max()
+    f["ewm_01"] = L.ewm(alpha=0.1, min_periods=7).mean()
+    f["ewm_03"] = L.ewm(alpha=0.3, min_periods=7).mean()
+    f["days_since_sale"] = _days_since(L > 0).clip(upper=400).where(L.notna())
     return f
+
+
+def _days_since(flag: pd.DataFrame) -> pd.DataFrame:
+    """Rows since the last True in each column (400 if never). Pure look-back, no leakage."""
+    T = len(flag); pos = pd.DataFrame(np.where(flag.values, np.arange(T)[:, None], np.nan), index=flag.index, columns=flag.columns).ffill()
+    return pd.DataFrame(np.nan_to_num(np.arange(T)[:, None] - pos.values, nan=400.0), index=flag.index, columns=flag.columns)
+
+
+def cross_features(f: dict, h: pd.DataFrame) -> dict:
+    """Cross-series context built ONLY from already-lagged features (so still leak-free)."""
+    st = h.set_index("sku").loc[f["rmean_28"].columns]
+    item, store = st.item_id.values, st.store_id.values
+    grp = lambda df, key, how: df.T.groupby(key).transform(how).T
+    r28, r7, r56 = f["rmean_28"], f["rmean_7"], f["rmean_56"]
+    store28 = grp(r28, store, "sum").where(r28.notna())               # groupby-sum turns all-NaN into 0 -> restore NaN
+    trend = (grp(r7, store, "sum") / (grp(r56, store, "sum") + 1e-3)).where(r56.notna() & r7.notna()).clip(upper=10)
+    return {"item_rmean28_xstore": grp(r28, item, "mean"), "store_rmean28": store28, "share_in_store": r28 / (store28 + 1e-3),
+            "store_trend": trend}
+
+
+def bottom_sales_features(S_b: pd.DataFrame, h: pd.DataFrame) -> dict:
+    f = sales_features(S_b); f.update(cross_features(f, h)); return f
 
 
 def calendar_frame(df: pd.DataFrame) -> pd.DataFrame:
@@ -72,7 +97,12 @@ def build_all(force: bool = False):
     snap = wide(df, "snap").astype("float32")
 
     # ---- bottom table -----------------------------------------------------
-    f = sales_features(S_b)
+    f = bottom_sales_features(S_b, h)
+    cat_store = (h.set_index("sku").loc[P.columns, "cat_id"] + "|" + h.set_index("sku").loc[P.columns, "store_id"]).values
+    price_extra = {"price_rel_catstore": P / P.T.groupby(cat_store).transform("mean").T,
+                   "days_since_price_change": _days_since((P != P.shift(1)) & P.notna()).clip(upper=400).where(P.notna()),
+                   "price_vs_min91": P / P.rolling(91, min_periods=1).min()}
+    f.update(price_extra)
     f.update({"sell_price": P, "price_ratio": ratio, "price_change_wk": chg, "price_rel_item": rel_item,
               "promo": (ratio < 0.97).astype("float32").where(P.notna()), "snap": snap})
     long = {k: v.stack(future_stack=True).rename(k) for k, v in f.items()}
@@ -109,11 +139,14 @@ def build_all(force: bool = False):
     return bt, at, S_all, h
 
 
-BOTTOM_FEATS = (["lag_%d" % k for k in LAGS] + ["rmean_%d" % w for w in ROLL] + ["rstd_7", "rstd_28", "zero_rate_28",
+BOTTOM_FEATS_BASE = (["lag_%d" % k for k in LAGS] + ["rmean_%d" % w for w in ROLL] + ["rstd_7", "rstd_28", "zero_rate_28",
                 "dow_mean_4w", "dow_mean_8w", "trend_ratio", "rmax_28", "sell_price", "price_ratio",
                 "price_change_wk", "price_rel_item", "promo", "snap", "wday", "month", "dom", "woy", "is_event",
                 "event_type", "event_code", "days_to_event", "days_since_event",
                 "item_id_code", "dept_id_code", "cat_id_code", "store_id_code", "state_id_code"])
+BOTTOM_EXT = ["ewm_01", "ewm_03", "days_since_sale", "item_rmean28_xstore", "store_rmean28", "share_in_store", "store_trend",
+              "price_rel_catstore", "days_since_price_change", "price_vs_min91"]
+BOTTOM_FEATS = BOTTOM_FEATS_BASE + BOTTOM_EXT          # candidates; scripts/tune_lgbm.py picks base vs extended on a separate window
 AGG_FEATS = (["lag_%d" % k for k in LAGS] + ["rmean_%d" % w for w in ROLL] + ["rstd_7", "rstd_28", "zero_rate_28",
              "dow_mean_4w", "dow_mean_8w", "trend_ratio", "rmax_28", "promo_share", "price_ratio", "avail_share",
              "snap", "wday", "month", "dom", "woy", "is_event", "event_type", "event_code", "days_to_event",

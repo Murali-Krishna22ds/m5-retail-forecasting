@@ -9,17 +9,19 @@ from m5fc.store import load, to_wide, save, FC
 bt, at, S, h = build_all(); bottoms = set(h.sku)
 
 # TFT covers bottom series only -> also provide a coherent bottom-up version (point forecasts, all levels)
-if (FC / "tft.parquet").exists():
+TFT_BEST = "tft_avg" if (FC / "tft_avg.parquet").exists() else "tft"
+if (FC / f"{TFT_BEST}.parquet").exists():
     from m5fc.data import aggregate
-    t = load("tft"); parts = []
+    t = load(TFT_BEST); parts = []
     for w, g in t.groupby("window"):
         P = to_wide(g, "point")[list(h.sku)]
         A = aggregate(P, h).stack().rename("point").reset_index(); A.columns = ["d", "node", "point"]; A["window"] = w
         parts.append(A)
     save("tft_bu", pd.concat(parts, ignore_index=True))
 
-models = ["naive", "snaive", "prophet", "lgbm", "lgbm_bu", "lgbm_td", "lgbm_ols", "lgbm_wlss", "lgbm_mint"]
-models += [m for m in ("tft", "tft_bu") if (FC / f"{m}.parquet").exists()]
+models = ["naive", "snaive", "prophet", "lgbm_v1", "lgbm_v1_mint", "lgbm", "lgbm_bu", "lgbm_td", "lgbm_ols", "lgbm_wlss", "lgbm_mint", "lgbm_cqr"]
+models += [m for m in ("tft", "tft2", "tft_avg", "tft_cqr", "tft_bu", "ens", "ens_bu", "ens_mint") if (FC / f"{m}.parquet").exists()]
+FINAL = "ens_mint" if "ens_mint" in models else "lgbm_mint"
 for w in ("test", "cal"):
     ms = [m for m in models if w in set(load(m)["window"]) ]
     r = score_all(ms, S, bottoms, bt, w); r.to_csv(RES / f"metrics_{w}.csv", index=False)
@@ -30,9 +32,11 @@ print(te.drop(columns=["window"]).round(3).to_string())
 # ---- paired bootstrap over item-store series (pooled WAPE difference) ----------------------------
 Y = S.loc[TEST_START:TEST_END, list(h.sku)]
 def abs_err(m): return (Y - to_wide(load(m, "test"), "point")[Y.columns]).abs().sum()
-ae = {m: abs_err(m) for m in ["snaive", "prophet", "lgbm", "lgbm_mint"] + (["tft"] if "tft" in models else [])}
+cand = ["snaive", "prophet", "lgbm_v1_mint", "lgbm_mint", FINAL] + ([TFT_BEST] if TFT_BEST in models else [])
+ae = {m: abs_err(m) for m in dict.fromkeys(cand)}
 tot = Y.sum(); rng = np.random.default_rng(0); idx = np.arange(len(Y.columns)); out = {}
-for a, b in [("prophet", "lgbm_mint"), ("snaive", "lgbm_mint"), ("lgbm", "lgbm_mint")] + ([("tft", "lgbm_mint"), ("prophet", "tft")] if "tft" in ae else []):
+pairs = [("prophet", FINAL), ("snaive", FINAL), ("lgbm_v1_mint", FINAL), ("lgbm_v1_mint", "lgbm_mint"), ("lgbm_mint", FINAL)] + ([(TFT_BEST, FINAL)] if TFT_BEST in ae else [])
+for a, b in [p for p in pairs if p[0] != p[1]]:
     d = []
     for _ in range(2000):
         s = rng.choice(idx, len(idx)); d.append((ae[a].values[s].sum() - ae[b].values[s].sum()) / tot.values[s].sum())
@@ -42,7 +46,7 @@ json.dump(out, open(RES / "bootstrap_wape_diff.json", "w"), indent=2); print(jso
 # ---- breakdown by category & intermittency -----------------------------------------------------
 rows = []
 adi = {c: (len(Y) / max((S.loc[:TEST_START - 1, c] > 0).sum(), 1)) for c in h.sku}
-for m in ["snaive", "prophet", "lgbm_mint"] + (["tft"] if "tft" in models else []):
+for m in dict.fromkeys(["snaive", "prophet", "lgbm_v1_mint", FINAL] + ([TFT_BEST] if TFT_BEST in models else [])):
     P = to_wide(load(m, "test"), "point")[Y.columns]
     for cat, g in h.groupby("cat_id"):
         rows.append(dict(model=m, group=cat, WAPE=M.wape(Y[g.sku].values, P[g.sku].values)))

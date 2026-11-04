@@ -3,7 +3,8 @@ import sys, warnings, json; warnings.filterwarnings("ignore"); sys.path.insert(0
 import numpy as np, pandas as pd, plotly.graph_objects as go, plotly.io as pio
 import app as A
 from m5fc import config as C
-D = A.store_data(); S, dates, h = D["S"], D["dates"], D["h"]
+D = A.store_data(); S, dates, h = D["S"], D["dates"], D["h"]; PM = D["primary"]; PN = A.NAMES[PM]
+INV_PRIMARY = json.load(open(C.RES / "inventory_info.json")).get("primary", "LightGBM + MinT")
 W = dict(template="plotly_white", margin=dict(l=45, r=10, t=40, b=40), font=dict(size=12), paper_bgcolor="#fff", plot_bgcolor="#fff")
 def band(fig, x, lo, hi, color, name, vis):
     fig.add_scatter(x=np.r_[x, x[::-1]], y=np.r_[hi, lo[::-1]], fill="toself", line=dict(width=0), fillcolor=color, name=name, hoverinfo="skip", visible=vis)
@@ -13,11 +14,11 @@ nodes = ["Total", "CA", "TX", "WI", "CA_1", "CA_3", "TX_2", "WI_1"] + [n for n i
 fig = go.Figure(); per = 5
 for i, n in enumerate(nodes):
     v = i == 0; lo = C.TEST_START - 56
-    f = A.get_fc("lgbm_mint", n); p = A.get_fc("prophet", n); x = dates.loc[f.d]
+    f = A.get_fc(PM, n); p = A.get_fc("prophet", n); x = dates.loc[f.d]
     fig.add_scatter(x=dates.loc[lo:C.TEST_END], y=S.loc[lo:C.TEST_END, n], name="Actual", line=dict(color="#222", width=1.4), visible=v)
-    band(fig, x, f["q0.025"].values, f["q0.975"].values, "rgba(11,110,253,0.13)", "95% interval", v)
-    band(fig, x, f["q0.1"].values, f["q0.9"].values, "rgba(11,110,253,0.28)", "80% interval", v)
-    fig.add_scatter(x=x, y=f.point, name="LightGBM + MinT", line=dict(color="#0b6efd", width=2.4), visible=v)
+    band(fig, x, f["q0.025"].values, f["q0.975"].values, "rgba(112,72,232,0.13)", "95% interval", v)
+    band(fig, x, f["q0.1"].values, f["q0.9"].values, "rgba(112,72,232,0.28)", "80% interval", v)
+    fig.add_scatter(x=x, y=f.point, name=PN, line=dict(color="#7048e8", width=2.4), visible=v)
     fig.add_scatter(x=dates.loc[p.d], y=p.point, name="Prophet", line=dict(color="#e8590c", width=1.6, dash="dash"), visible=v)
 btn = [dict(label=n.replace("|", " | "), method="update", args=[{"visible": [j // per == i for j in range(len(nodes) * per)]}, {"title": f"{n} - test window forecast"}]) for i, n in enumerate(nodes)]
 fig.update_layout(**W, height=440, title=f"{nodes[0]} - test window forecast", hovermode="x unified", legend=dict(orientation="h", y=-0.15),
@@ -26,14 +27,14 @@ fig.add_vline(x=dates.loc[C.TEST_START], line_dash="dot", line_color="#999")
 f1 = pio.to_html(fig, include_plotlyjs=True, full_html=False, div_id="p1", config={"displaylogo": False})
 
 # 2 accuracy ----------------------------------------------------------------------------------------------
-te = pd.read_csv(C.RES / "metrics_test.csv"); NM = {"naive": "Naive", "snaive": "Seasonal naive", "prophet": "Prophet", "lgbm": "LightGBM", "lgbm_mint": "LightGBM + MinT", "tft": "TFT"}
-fig = go.Figure(); cols = {"naive": "#adb5bd", "snaive": "#868e96", "prophet": "#e8590c", "lgbm": "#6ea8fe", "lgbm_mint": "#0b6efd", "tft": "#2f9e44"}
-for m in NM:
+te = pd.read_csv(C.RES / "metrics_test.csv"); NM = {"snaive": "Seasonal naive", "prophet": "Prophet", "lgbm_v1_mint": "LightGBM v1 + MinT", "lgbm_mint": "LightGBM + MinT", "tft_avg": "TFT (avg of 2)", "ens_mint": "Ensemble + MinT (final)"}
+fig = go.Figure(); cols = {"snaive": "#868e96", "prophet": "#e8590c", "lgbm_v1_mint": "#a5d8ff", "lgbm_mint": "#0b6efd", "tft_avg": "#2f9e44", "ens_mint": "#7048e8"}
+for m in [k for k in NM if k in set(te.model)]:
     g = te[te.model == m].set_index("level").reindex(["Total", "State", "Store", "Item-Store"])
     fig.add_bar(x=g.index, y=g.WAPE, name=NM[m], marker_color=cols[m])
-fig.update_layout(**W, height=360, barmode="group", title="WAPE by hierarchy level (lower is better; TFT item-level only)", legend=dict(orientation="h", y=-0.2))
+fig.update_layout(**W, height=360, barmode="group", title="WAPE by hierarchy level (lower is better; TFT = bottom-up sum of its item forecasts)", legend=dict(orientation="h", y=-0.2))
 f2 = pio.to_html(fig, include_plotlyjs=False, full_html=False, div_id="p2", config={"displaylogo": False})
-t = te[te.model.isin(NM)].copy(); t["model"] = t.model.map(NM)
+t = te[te.model.isin(NM)].copy(); t["model"] = t.model.map(NM); t = t.set_index("model").loc[[NM[k] for k in NM if NM[k] in set(t.model)]].reset_index()
 it = t[t.level == "Item-Store"][["model", "WAPE", "RMSSE", "SPL", "Cov80", "Cov95", "WRMSSE"]].round(3).fillna("-")
 tab = it.to_html(index=False, border=0, classes="tbl")
 
@@ -47,7 +48,7 @@ res, k = A.plan_store("CA_1", 1, 1.05, 1.5, 1.0, 0)
 f4 = pio.to_html(A.order_figure(res).update_layout(**W), include_plotlyjs=False, full_html=False, div_id="p4", config={"displaylogo": False})
 f5 = pio.to_html(A.policy_figure().update_layout(**W), include_plotlyjs=False, full_html=False, div_id="p5", config={"displaylogo": False})
 otab = res.sort_values("Order $", ascending=False).head(12).to_html(index=False, border=0, classes="tbl")
-inv = pd.read_csv(C.RES / "inventory_summary.csv"); g = inv[inv.model == "LightGBM + MinT"].set_index("policy")
+inv = pd.read_csv(C.RES / "inventory_summary.csv"); g = inv[inv.model == INV_PRIMARY].set_index("policy")
 kp = "".join(f'<div class="kpi"><b>{v}</b><span>{l}</span></div>' for l, v in [("MILP cost (4 wk, 10 stores)", f"${g.loc['milp','cost']:,.0f}"), ("Order-the-mean cost", f"${g.loc['mean','cost']:,.0f}"), ("MILP fill rate", f"{g.loc['milp','fill_rate']:.1%}"), ("Mean-order fill rate", f"{g.loc['mean','fill_rate']:.1%}")])
 html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>M5 forecasting &amp; replenishment - demo</title><style>
@@ -63,12 +64,12 @@ p.s{{color:var(--mut);margin:2px 0 10px}} .card{{background:#fff;color:#1b1f24;b
 .tbl th{{background:#f1f3f5;text-align:left}} .tbl td,.tbl th{{padding:4px 8px;border-bottom:1px solid #e5e8eb}} .note{{font-size:12.5px;color:var(--mut)}}
 </style></head><body><main>
 <h1>Retail demand forecasting &amp; replenishment (M5 / Walmart)</h1>
-<p class="s">Static, interactive snapshot of the Dash app's results. 40 items x 10 stores x 3 states, held-out test window d1914-d1941 (2016-04-25 to 2016-05-22). Choose a node in the dropdown; hover for values.</p>
+<p class="s">Static, interactive snapshot of the Dash app's results (final model: LightGBM + TFT ensemble, MinT-reconciled). 40 items x 10 stores x 3 states, held-out test window d1914-d1941 (2016-04-25 to 2016-05-22). Choose a node in the dropdown; hover for values.</p>
 <h2>1 &middot; Forecasts with 80% / 95% prediction intervals</h2><div class="card">{f1}</div>
 <h2>2 &middot; Accuracy</h2><div class="card">{f2}</div><div class="card">{tab}</div>
-<p class="note">Item-store level, 400 series. WAPE/RMSSE lower is better; SPL = scaled pinball loss; Cov = interval coverage (nominal 0.80 / 0.95). TFT intervals under-cover (0.47 / 0.56).</p>
+<p class="note">Item-store level, 400 series. WAPE/RMSSE lower is better; SPL = scaled pinball loss; Cov = interval coverage (nominal 0.80 / 0.95). Raw TFT intervals under-cover; the final ensemble intervals are conformally recalibrated (see repo docs).</p>
 <h2>3 &middot; Hierarchical reconciliation (Darts MinT)</h2><div class="card">{f3}</div><div class="card">{aud_html}</div>
-<p class="note">Max |parent - sum of children| in units. Base LightGBM forecasts disagree across levels; every reconciled version is coherent to ~1e-13.</p>
+<p class="note">Max |parent - sum of children| in units. Base forecasts disagree across levels; every reconciled version is coherent to ~1e-13.</p>
 <h2>4 &middot; Order recommendations (OR-Tools MILP)</h2>
 <p class="s">Store CA_1, week 1. Budget = 1.05x cost of ordering the mean forecast, shelf capacity 1.5x, case packs. Solver {k['status']} in {k['solve_s']:.2f}s; budget used ${k['budget_used']:.0f} of ${k['budget']:.0f}.</p>
 <div class="card">{f4}</div><div class="card">{otab}</div>

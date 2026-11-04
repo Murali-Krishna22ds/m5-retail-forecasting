@@ -1,0 +1,90 @@
+{
+ "feature_set": "ext",
+ "features": [
+  "lag_28",
+  "lag_35",
+  "lag_42",
+  "lag_49",
+  "lag_56",
+  "lag_91",
+  "lag_364",
+  "rmean_7",
+  "rmean_14",
+  "rmean_28",
+  "rmean_56",
+  "rmean_168",
+  "rstd_7",
+  "rstd_28",
+  "zero_rate_28",
+  "dow_mean_4w",
+  "dow_mean_8w",
+  "trend_ratio",
+  "rmax_28",
+  "sell_price",
+  "price_ratio",
+  "price_change_wk",
+  "price_rel_item",
+  "promo",
+  "snap",
+  "wday",
+  "month",
+  "dom",
+  "woy",
+  "is_event",
+  "event_type",
+  "event_code",
+  "days_to_event",
+  "days_since_event",
+  "item_id_code",
+  "dept_id_code",
+  "cat_id_code",
+  "store_id_code",
+  "state_id_code",
+  "ewm_01",
+  "ewm_03",
+  "days_since_sale",
+  "item_rmean28_xstore",
+  "store_rmean28",
+  "share_in_store",
+  "store_trend",
+  "price_rel_catstore",
+  "days_since_price_change",
+  "price_vs_min91"
+ ],
+ "point": {
+  "num_leaves": 63,
+  "min_data_in_leaf": 60,
+  "feature_fraction": 0.7,
+  "lambda_l2": 1.0,
+  "tweedie_variance_power": 1.15,
+  "bagging_fraction": 0.7,
+  "max_bin": 127
+ },
+ "quantile": {
+  "num_leaves": 31,
+  "min_data_in_leaf": 60,
+  "feature_fraction": 0.7,
+  "lambda_l2": 1.0,
+  "bagging_fraction": 0.7,
+  "max_bin": 127
+ },
+ "quantile_tuned_used": false,
+ "selection_window": [
+  1858,
+  1885
+ ],
+ "baseline_selection_scores": {
+  "WAPE": 0.7007914672408873,
+  "RMSSE": 0.7022143566155844
+ },
+ "chosen_selection_scores": {
+  "WAPE": 0.6866329190641964,
+  "RMSSE": 0.6972400793901093
+ },
+ "adopted_config": "C_ext_default",
+ "decision_scores_vs_A": {
+  "A_v1": 1.0,
+  "B_tuned": 1.0071349602367563,
+  "C_ext_default": 0.9968429152163749
+ }
+}

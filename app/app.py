@@ -12,30 +12,32 @@ from m5fc.features import build_all
 from m5fc.store import load, to_wide, FC
 from m5fc.reconcile import coherence_error
 
-COL = {"actual": "#222", "lgbm_mint": "#0b6efd", "lgbm": "#6ea8fe", "prophet": "#e8590c", "snaive": "#868e96", "naive": "#adb5bd", "tft": "#2f9e44"}
-NAMES = {"lgbm_mint": "LightGBM + MinT", "lgbm": "LightGBM (base)", "prophet": "Prophet", "snaive": "Seasonal naive", "naive": "Naive", "tft": "TFT"}
+COL = {"actual": "#222", "ens_mint": "#7048e8", "tft_avg": "#2f9e44", "lgbm_mint": "#0b6efd", "lgbm": "#6ea8fe", "prophet": "#e8590c", "snaive": "#868e96", "naive": "#adb5bd", "tft": "#2f9e44"}
+NAMES = {"ens_mint": "Ensemble + MinT", "tft_avg": "TFT (avg of 2)", "lgbm_mint": "LightGBM + MinT", "lgbm": "LightGBM (base)", "tft_bu": "TFT (bottom-up)", "prophet": "Prophet", "snaive": "Seasonal naive", "naive": "Naive", "tft": "TFT"}
 
 
 @functools.lru_cache(maxsize=1)
 def store_data():
     bt, at, S, h = build_all()
-    models = [m for m in ["lgbm_mint", "lgbm", "prophet", "snaive", "naive", "tft"] if (FC / f"{m}.parquet").exists()]
+    models = [m for m in ["ens_mint", "lgbm_mint", "lgbm", "prophet", "snaive", "naive", "tft_avg", "tft"] if (FC / f"{m}.parquet").exists()]
     F = {m: load(m, "test") for m in models}
     if (FC / "tft_bu.parquet").exists(): F["tft_bu"] = load("tft_bu", "test")      # TFT summed up the hierarchy (point only)
+    primary = "ens_mint" if "ens_mint" in models else "lgbm_mint"
+    if (FC / "ens.parquet").exists(): F["ens"] = load("ens", "test")                 # unreconciled ensemble (for the coherence plot)
     F_cal = {m: load(m, "cal") for m in models if "cal" in set(load(m)["window"])}
     price = bt[bt.d.between(C.TEST_START, C.TEST_END)].pivot(index="d", columns="sku", values="sell_price")
     price_now = price.iloc[0].fillna(price.mean()).fillna(0.5)
     from m5fc.data import date_index; dates = date_index()
     met = pd.read_csv(C.RES / "metrics_test.csv")
     info = json.load(open(C.RES / "inventory_info.json")) if (C.RES / "inventory_info.json").exists() else {"rho": 0.2}
-    return dict(bt=bt, S=S, h=h, models=models, F=F, price_now=price_now, dates=dates, met=met, rho=info["rho"],
+    return dict(bt=bt, S=S, h=h, models=models, F=F, price_now=price_now, dates=dates, met=met, rho=info["rho"], primary=primary,
                 audit=pd.read_csv(C.RES / "coherence_audit.csv") if (C.RES / "coherence_audit.csv").exists() else None)
 
 
 def get_fc(m: str, node: str) -> pd.DataFrame:
     """Forecast rows for (model, node); TFT only exists at item level -> fall back to its bottom-up sum above that."""
     D = store_data(); f = D["F"][m]; f = f[f.node == node]
-    if f.empty and m == "tft" and "tft_bu" in D["F"]:
+    if f.empty and m in ("tft", "tft_avg") and "tft_bu" in D["F"]:
         f = D["F"]["tft_bu"]; f = f[f.node == node]
     return f.sort_values("d")
 
@@ -73,7 +75,7 @@ def node_metrics(node, models):
     for m in models:
         f = get_fc(m, node)
         if f.empty: continue
-        r = dict(model=NAMES[m] + (" (bottom-up)" if m == "tft" and node not in set(D["h"].sku) else ""), WAPE=round(M.wape(Y.values, f.point.values), 3), RMSSE=round(M.rmsse(Y.values, f.point.values, sc), 3))
+        r = dict(model=NAMES[m] + (" (bottom-up)" if m in ("tft", "tft_avg") and node not in set(D["h"].sku) else ""), WAPE=round(M.wape(Y.values, f.point.values), 3), RMSSE=round(M.rmsse(Y.values, f.point.values, sc), 3))
         if "q0.1" in f and f["q0.1"].notna().all():
             r["Cov80"] = round(M.coverage(Y.values, f["q0.1"], f["q0.9"]), 2); r["Cov95"] = round(M.coverage(Y.values, f["q0.025"], f["q0.975"]), 2)
         rows.append(r)
@@ -82,7 +84,7 @@ def node_metrics(node, models):
 
 # ----------------------------------------------------------------------------------- accuracy tab
 def accuracy_figure(metric, level):
-    met = store_data()["met"]; g = met[(met.level == level) & met.model.isin(["naive", "snaive", "prophet", "lgbm", "lgbm_mint", "tft", "tft_bu"])]
+    met = store_data()["met"]; g = met[(met.level == level) & met.model.isin(["naive", "snaive", "prophet", "lgbm", "lgbm_mint", "ens_mint", "tft_avg", "tft_bu"])]
     g = g.dropna(subset=[metric])
     fig = go.Figure(go.Bar(x=[NAMES.get(m, m) for m in g.model], y=g[metric], marker_color=[COL.get(m.replace("_bu", ""), "#999") for m in g.model],
                            text=g[metric].round(3), textposition="outside"))
@@ -95,10 +97,11 @@ def accuracy_figure(metric, level):
 # ----------------------------------------------------------------------------------- reconciliation tab
 def reconciliation_figure(state):
     D = store_data(); h = D["h"]; stores = sorted(h[h.state_id == state].store_id.unique())
-    base = to_wide(D["F"]["lgbm"].assign(window="test"), "point") if "lgbm" in D["F"] else None
-    rec = to_wide(D["F"]["lgbm_mint"], "point"); dates = D["dates"]
+    base_name = "ens" if D["primary"] == "ens_mint" and "ens" in D["F"] else "lgbm"
+    base = to_wide(D["F"][base_name].assign(window="test"), "point")
+    rec = to_wide(D["F"][D["primary"]], "point"); dates = D["dates"]
     fig = go.Figure()
-    for lbl, W in (("Base (unreconciled)", base), ("Reconciled (MinT)", rec)):
+    for lbl, W in (("Base (unreconciled)", base), (f"Reconciled ({NAMES[D['primary']]})", rec)):
         gap = W[state] - W[stores].sum(axis=1)
         fig.add_bar(x=dates.loc[W.index], y=gap, name=lbl)
     fig.update_layout(template="plotly_white", barmode="group", height=340, title=f"{state}: state forecast minus sum of its stores' forecasts (units)",
@@ -107,8 +110,8 @@ def reconciliation_figure(state):
 
 
 # ----------------------------------------------------------------------------------- inventory tab
-def plan_store(store, week, budget_factor, cap_factor, penalty_mult, cover_days, model="lgbm_mint", K=300):
-    D = store_data(); h, S = D["h"], D["S"]
+def plan_store(store, week, budget_factor, cap_factor, penalty_mult, cover_days, model=None, K=300):
+    D = store_data(); h, S = D["h"], D["S"]; model = model or D["primary"]
     g = h[h.store_id == store]; skus = list(g.sku)
     d0 = C.TEST_START + 7 * (week - 1); d1 = d0 + 6
     P = O.item_params(h, D["price_now"], margin_mult=penalty_mult).loc[skus]
@@ -146,7 +149,7 @@ def order_figure(res):
 def policy_figure():
     p = C.RES / "inventory_summary.csv"
     if not p.exists(): return go.Figure()
-    s = pd.read_csv(p); s = s[s.model == "LightGBM + MinT"]
+    s = pd.read_csv(p); s = s[s.model == json.load(open(C.RES / "inventory_info.json")).get("primary", "LightGBM + MinT")]
     lab = {"milp": "OR-Tools MILP", "mean": "Order mean forecast", "safety": "Mean + 1.28 sigma", "oracle": "Perfect foresight"}
     fig = go.Figure(go.Bar(x=[lab[x] for x in s.policy], y=s.cost, text=s.cost.round(0), textposition="outside", marker_color=["#0b6efd", "#adb5bd", "#868e96", "#2f9e44"]))
     fig.update_layout(template="plotly_white", height=330, title="4-week backtest: realised holding + stockout cost ($, 10 stores)", margin=dict(t=50, b=30))
@@ -173,13 +176,13 @@ def make_app() -> Dash:
     app.layout = html.Div([
         html.H2("Retail demand forecasting & replenishment (M5 / Walmart)", style={"margin": "8px 0 0"}),
         html.Div("Subset: 40 items x 10 stores x 3 states, test window = last 28 days of M5 (d1914-d1941). "
-                 "Forecasts: LightGBM (+MinT reconciliation), Prophet, TFT, naive. Orders: OR-Tools MILP.", style={"color": "#666", "marginBottom": 8}),
+                 "Forecasts: LightGBM + TFT ensemble (MinT reconciliation), Prophet, naive. Orders: OR-Tools MILP.", style={"color": "#666", "marginBottom": 8}),
         dcc.Tabs(id="tabs", value="fc", children=[
             dcc.Tab(label="Forecasts", value="fc", children=html.Div([
                 html.Div([
                     html.Div([html.Label("Level"), dcc.Dropdown(["Total", "State", "Store", "Item-Store"], "Store", id="lvl", clearable=False)], style={"width": 160}),
                     html.Div([html.Label("Node"), dcc.Dropdown(id="node", clearable=False)], style={"width": 260}),
-                    html.Div([html.Label("Models (first = shown with interval)"), dcc.Dropdown([{"label": NAMES[m], "value": m} for m in D["models"]], ["lgbm_mint", "prophet"], multi=True, id="models")], style={"width": 380}),
+                    html.Div([html.Label("Models (first = shown with interval)"), dcc.Dropdown([{"label": NAMES[m], "value": m} for m in D["models"]], [store_data()["primary"], "prophet"], multi=True, id="models")], style={"width": 380}),
                     html.Div([html.Label("Interval"), dcc.RadioItems([{"label": "80%", "value": "80"}, {"label": "95%", "value": "95"}, {"label": "none", "value": "none"}], "80", id="band", inline=True)]),
                     html.Div([html.Label("History (days)"), dcc.Slider(28, 365, 28, value=112, id="hist", marks={28: "28", 112: "112", 224: "224", 364: "364"})], style={"width": 260}),
                 ], style={"display": "flex", "gap": 18, "flexWrap": "wrap", "padding": "10px 0"}),

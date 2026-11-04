@@ -21,12 +21,13 @@ def prepare(bt: pd.DataFrame) -> pd.DataFrame:
     return d[keep].reset_index(drop=True)
 
 
-def run(bt: pd.DataFrame, epochs: int = 6, batches_per_epoch: int = 300, batch_size: int = 128, log=print):
+def run(bt: pd.DataFrame, epochs: int = 6, batches_per_epoch: int = 300, batch_size: int = 128, log=print, hidden: int = 16, heads: int = 2,
+        hidden_cont: int = 8, dropout: float = 0.1, lr: float = 0.01, seed: int = SEED, name: str = "tft"):
     import lightning.pytorch as pl
     from lightning.pytorch.callbacks import EarlyStopping
     from pytorch_forecasting import TimeSeriesDataSet, TemporalFusionTransformer, GroupNormalizer
     from pytorch_forecasting.metrics import QuantileLoss
-    torch.set_num_threads(1); pl.seed_everything(SEED)
+    torch.set_num_threads(1); pl.seed_everything(seed)
     data = prepare(bt)
     mk = dict(time_idx="time_idx", target="y", group_ids=["sku"], min_encoder_length=28, max_encoder_length=ENC,
               min_prediction_length=H, max_prediction_length=H,
@@ -44,12 +45,12 @@ def run(bt: pd.DataFrame, epochs: int = 6, batches_per_epoch: int = 300, batch_s
     vl = val.to_dataloader(train=False, batch_size=256, num_workers=0)
     log(f"train windows={len(train):,}  val series={len(val)}  test series={len(test)}")
     model = TemporalFusionTransformer.from_dataset(
-        train, learning_rate=0.01, hidden_size=16, attention_head_size=2, dropout=0.1, hidden_continuous_size=8,
+        train, learning_rate=lr, hidden_size=hidden, attention_head_size=heads, dropout=dropout, hidden_continuous_size=hidden_cont,
         loss=QuantileLoss(quantiles=QUANTILES), optimizer="Adam", reduce_on_plateau_patience=2, log_interval=-1)
     log(f"TFT parameters: {sum(p.numel() for p in model.parameters()):,}")
     trainer = pl.Trainer(max_epochs=epochs, accelerator="cpu", gradient_clip_val=0.1, limit_train_batches=batches_per_epoch,
                          enable_progress_bar=False, enable_model_summary=False, logger=False, enable_checkpointing=True,
-                         default_root_dir=str(RES / "tft_ckpt"),
+                         default_root_dir=str(RES / f"{name}_ckpt"),
                          callbacks=[EarlyStopping(monitor="val_loss", patience=3, mode="min")])
     trainer.fit(model, tl, vl)
     best = TemporalFusionTransformer.load_from_checkpoint(trainer.checkpoint_callback.best_model_path)
@@ -75,5 +76,5 @@ def run(bt: pd.DataFrame, epochs: int = 6, batches_per_epoch: int = 300, batch_s
     fc = fc.merge(av, on=["node", "d"], how="left")
     for c in ["point"] + qcols(): fc.loc[fc.avail != 1, c] = 0.0
     fc = fc.drop(columns="avail")
-    save("tft", fc)
+    save(name, fc)
     return fc, hist

@@ -4,7 +4,7 @@ Conformalised quantile regression (CQR) recalibrates intervals on the 28-day cal
 from __future__ import annotations
 import json, numpy as np, pandas as pd, lightgbm as lgb
 from .config import LAST_TRAIN_D, CAL_START, CAL_END, TEST_START, TEST_END, QUANTILES, RES, SEED
-from .features import BOTTOM_FEATS, AGG_FEATS, BOTTOM_CATS, AGG_CATS
+from .features import BOTTOM_FEATS_BASE, AGG_FEATS, BOTTOM_CATS, AGG_CATS
 from .store import save, qcols
 
 MODELS = RES / "models"; MODELS.mkdir(exist_ok=True, parents=True)
@@ -24,7 +24,7 @@ def _split(t, feats, cats, d0):
     return tr, ca, te
 
 
-def fit_predict(t: pd.DataFrame, feats, cats, d0, id_col, tag, bottom: bool, log=print):
+def fit_predict(t: pd.DataFrame, feats, cats, d0, id_col, tag, bottom: bool, log=print, point_kw=None, quant_kw=None):
     tr, ca, te = _split(t, feats, cats, d0)
     if bottom:                      # do not train on days when the item was not on sale (no price)
         tr = tr[tr.avail == 1]
@@ -34,14 +34,14 @@ def fit_predict(t: pd.DataFrame, feats, cats, d0, id_col, tag, bottom: bool, log
     obj = "tweedie" if bottom else "regression"
     extra = dict(tweedie_variance_power=1.15) if bottom else {}
     log(f"[{tag}] train rows={len(tr):,} cal rows={len(ca_fit):,}")
-    pm = lgb.train(_params(obj, **extra), dtr, 1500, valid_sets=[dca], callbacks=[lgb.early_stopping(60, verbose=False)])
+    pm = lgb.train(_params(obj, **{**extra, **(point_kw or {})}), dtr, 1500, valid_sets=[dca], callbacks=[lgb.early_stopping(60, verbose=False)])
     best = pm.best_iteration; log(f"[{tag}] point best_iter={best}")
     pm.save_model(str(MODELS / f"{tag}_point.txt"))
     preds = {"point": {w: np.clip(pm.predict(x[feats], num_iteration=best), 0, None) for w, x in (("cal", ca), ("test", te))}}
     imp = pd.DataFrame({"feature": feats, "gain": pm.feature_importance("gain")}).sort_values("gain", ascending=False)
     imp.to_csv(RES / f"feature_importance_{tag}.csv", index=False)
     for q in QUANTILES:
-        qm = lgb.train(_params("quantile", alpha=q, num_leaves=31), dtr, min(max(best, 150), 350))
+        qm = lgb.train(_params("quantile", alpha=q, **(quant_kw or {"num_leaves": 31})), dtr, min(max(best, 150), 350))
         qm.save_model(str(MODELS / f"{tag}_q{q}.txt"))
         preds[f"q{q}"] = {w: np.clip(qm.predict(x[feats]), 0, None) for w, x in (("cal", ca), ("test", te))}
         log(f"[{tag}] quantile {q} done")
@@ -86,13 +86,16 @@ def cqr(fc: pd.DataFrame, S_all: pd.DataFrame, group_of: dict | None = None) -> 
 
 
 def run(log=print):
+    """Uses results/best_params.json (written by scripts/tune_lgbm.py on a separate selection window) when present."""
     from .features import build_all
     bt, at, S_all, h = build_all()
-    fb, ib = fit_predict(bt, BOTTOM_FEATS, BOTTOM_CATS, TRAIN_FROM_BOTTOM, "sku", "bottom", True, log)
+    best = json.load(open(RES / "best_params.json")) if (RES / "best_params.json").exists() else None
+    feats = best["features"] if best else BOTTOM_FEATS_BASE
+    pk, qk = (best["point"], best["quantile"]) if best else (None, None)
+    log(f"bottom model: {len(feats)} features, point params {pk}, quantile params {qk}")
+    fb, ib = fit_predict(bt, feats, [c for c in BOTTOM_CATS if c in feats], TRAIN_FROM_BOTTOM, "sku", "bottom", True, log, pk, qk)
     fa, ia = fit_predict(at, AGG_FEATS, AGG_CATS, TRAIN_FROM_AGG, "node", "agg", False, log)
     base = pd.concat([fa, fb], ignore_index=True)
     save("lgbm", base)
-    lvl = {n: ("agg_" + n if n in set(fa.node) else "bottom") for n in base.node.unique()}
-    save("lgbm_cqr", cqr(base, S_all, lvl))
-    json.dump({"bottom_best_iter": int(ib), "agg_best_iter": int(ia), "cqr_adjustment": {f"{k[0]}-{k[1]}": {g: float(v) for g, v in d.items()} for k, d in ADJ.items()}}, open(RES / "lgbm_info.json", "w"))
+    json.dump({"bottom_best_iter": int(ib), "agg_best_iter": int(ia), "n_bottom_features": len(feats), "tuned": bool(best)}, open(RES / "lgbm_info.json", "w"))
     return base

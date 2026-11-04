@@ -1,1 +1,1 @@
-{"bottom_best_iter": 513, "agg_best_iter": 80, "cqr_adjustment": {"0.1-0.9": {"bottom": 0.0}, "0.025-0.975": {"bottom": 0.0}}}
+{"bottom_best_iter": 352, "agg_best_iter": 80, "n_bottom_features": 49, "tuned": true}

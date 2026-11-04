@@ -11,10 +11,13 @@ wk = S.loc[C.TEST_START - 56: C.TEST_START - 1, skus].values.reshape(8, 7, -1).s
 sigma_week = pd.Series(wk.std(0, ddof=1), index=skus)      # weekly demand std over the last 8 weeks
 fast = "--quick" in sys.argv
 
-SOURCES = {"LightGBM + MinT": "lgbm_mint", "Prophet": "prophet", "Seasonal naive": "snaive"}
-if (FC / "tft.parquet").exists(): SOURCES["TFT"] = "tft"
+PRIMARY = "Ensemble + MinT" if (FC / "ens_mint.parquet").exists() else "LightGBM + MinT"
+SOURCES = {}
+if (FC / "ens_mint.parquet").exists(): SOURCES["Ensemble + MinT"] = "ens_mint"
+SOURCES.update({"LightGBM + MinT": "lgbm_mint", "LightGBM v1 + MinT": "lgbm_v1_mint", "Prophet": "prophet", "Seasonal naive": "snaive"})
+if (FC / "tft_cqr.parquet").exists(): SOURCES["TFT (recalibrated)"] = "tft_cqr"
 # calibrate the copula correlation on the calibration window (honest: test is untouched)
-cal = load("lgbm_mint", "cal")
+cal = load(SOURCES[PRIMARY], "cal")
 rho, grid = O.calibrate_rho(cal, S, skus)
 print("rho calibration (80% interval coverage of 7-day demand):", {k: round(v, 3) for k, v in grid.items()}, "-> rho =", rho)
 out = {"rho": rho, "rho_grid": grid}; allbt = []
@@ -26,11 +29,12 @@ bt_all = pd.concat(allbt); bt_all.to_csv(C.RES / "inventory_backtest_rows.csv", 
 summ = O.summarise_backtest(bt_all); summ.to_csv(C.RES / "inventory_summary.csv", index=False)
 pd.set_option("display.width", 250); print(summ.round(3).to_string())
 
-# sensitivity: purchasing-budget tightness (LightGBM+MinT forecasts)
-fc = load("lgbm_mint", "test"); sens = []
+# sensitivity: purchasing-budget tightness (primary forecasts)
+fc = load(SOURCES[PRIMARY], "test"); sens = []
 for bf in [0.85, 0.95, 1.05, 1.25, 10.0]:
     r = O.backtest(fc, fc, S, h, price_now, rho, budget_factor=bf, label=f"budget x{bf}", sigma_hist=sigma_week, K=100)
     s = O.summarise_backtest(r); s["budget_factor"] = bf; sens.append(s)
 pd.concat(sens).to_csv(C.RES / "inventory_budget_sensitivity.csv", index=False)
 print(pd.concat(sens)[["budget_factor", "policy", "cost", "fill_rate", "stockout_rate"]].round(3).to_string())
+out["primary"] = PRIMARY
 json.dump(out, open(C.RES / "inventory_info.json", "w"))
