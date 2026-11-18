@@ -7,3 +7,14 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+# Python virtual environments
+venv/
+
+# Training logs and checkpoints
+lightning_logs/
+results/tft_new_ckpt/
+results/tft2_ckpt/
+
+# Secrets
+.env
+.env.*

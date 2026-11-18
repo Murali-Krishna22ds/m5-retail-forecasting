@@ -1,0 +1,22 @@
+{
+  "rho": 0.4,
+  "rho_grid": {
+    "0.0": 0.6225,
+    "0.2": 0.7675,
+    "0.4": 0.8306250000000001,
+    "0.6": 0.859375,
+    "0.8": 0.8825000000000001,
+    "1.0": 0.9137500000000001
+  },
+  "scenario_count": 200,
+  "cycle_days": 7,
+  "test_start": 1914,
+  "test_end": 1941,
+  "models": {
+    "Bottom-up": "lgbm_bu_new",
+    "Top-down": "lgbm_td_new",
+    "OLS": "lgbm_ols_new",
+    "WLS structural": "lgbm_wlss_new",
+    "MinT": "lgbm_mint_new"
+  }
+}
