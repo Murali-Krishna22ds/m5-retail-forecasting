@@ -4,4 +4,4 @@ services:
     name: m5-forecast-dashboard
     runtime: docker
     plan: free
-    healthCheckPath: /
+    healthCheckPath: /health

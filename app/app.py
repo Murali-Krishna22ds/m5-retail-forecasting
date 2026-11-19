@@ -243,6 +243,12 @@ def make_app() -> Dash:
     return app
 
 
-app = make_app(); server = app.server
+app = make_app(); 
+server = app.server;
+
+@server.route("/health")
+def health():
+    return {"status": "healthy"}, 200
+
 if __name__ == "__main__":
     app.run(debug=False, host="0.0.0.0", port=8050)
