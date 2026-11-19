@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
 # runtime-only deps for the dashboard (training deps are not needed to serve precomputed results + live OR-Tools)
-RUN pip install --no-cache-dir numpy pandas pyarrow scipy dash plotly ortools gunicorn
+RUN pip install --no-cache-dir numpy pandas pyarrow scipy dash plotly ortools gunicorn darts
 COPY src ./src
 COPY app ./app
 COPY results ./results
