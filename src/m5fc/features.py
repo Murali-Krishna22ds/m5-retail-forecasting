@@ -80,10 +80,13 @@ def build_all(force: bool = False):
     pb, pa, ps = PROC / "feat_bottom.parquet", PROC / "feat_agg.parquet", PROC / "S_all.parquet"
     df = build_subset()
     h = hierarchy_frame(df)
-    S_b = wide(df, "sales").astype("float32")
-    S_all = aggregate(S_b, h).astype("float32")
+
     if pb.exists() and pa.exists() and ps.exists() and not force:
         return pd.read_parquet(pb), pd.read_parquet(pa), pd.read_parquet(ps), h
+
+    S_b = wide(df, "sales").astype("float32")
+    S_all = aggregate(S_b, h).astype("float32")
+	
     cal = calendar_frame(df)
 
     # ---- price / promo (known in advance) -------------------------------
