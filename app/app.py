@@ -18,21 +18,78 @@ NAMES = {"ens_mint": "Ensemble + MinT", "tft_avg": "TFT (avg of 2)", "lgbm_mint"
 
 @functools.lru_cache(maxsize=1)
 def store_data():
-    bt, at, S, h = build_all()
-    models = [m for m in ["ens_mint", "lgbm_mint", "lgbm", "prophet", "snaive", "naive", "tft_avg", "tft"] if (FC / f"{m}.parquet").exists()]
-    F = {m: load(m, "test") for m in models}
-    if (FC / "tft_bu.parquet").exists(): F["tft_bu"] = load("tft_bu", "test")      # TFT summed up the hierarchy (point only)
-    primary = "ens_mint" if "ens_mint" in models else "lgbm_mint"
-    if (FC / "ens.parquet").exists(): F["ens"] = load("ens", "test")                 # unreconciled ensemble (for the coherence plot)
-    F_cal = {m: load(m, "cal") for m in models if "cal" in set(load(m)["window"])}
-    price = bt[bt.d.between(C.TEST_START, C.TEST_END)].pivot(index="d", columns="sku", values="sell_price")
-    price_now = price.iloc[0].fillna(price.mean()).fillna(0.5)
-    from m5fc.data import date_index; dates = date_index()
-    met = pd.read_csv(C.RES / "metrics_test.csv")
-    info = json.load(open(C.RES / "inventory_info.json")) if (C.RES / "inventory_info.json").exists() else {"rho": 0.2}
-    return dict(bt=bt, S=S, h=h, models=models, F=F, price_now=price_now, dates=dates, met=met, rho=info["rho"], primary=primary,
-                audit=pd.read_csv(C.RES / "coherence_audit.csv") if (C.RES / "coherence_audit.csv").exists() else None)
+    # Load only the hierarchy columns needed by the dashboard
+    subset_path = C.PROC / "subset.parquet"
+    h = pd.read_parquet(
+        subset_path,
+        columns=["sku", "item_id", "dept_id", "cat_id", "store_id", "state_id"]
+    ).drop_duplicates("sku").sort_values("sku").reset_index(drop=True)
 
+    # Load precomputed actual sales directly
+    S = pd.read_parquet(C.PROC / "S_all.parquet")
+
+    # Load only test-period prices, not the complete feature table
+    bt_path = C.PROC / "feat_bottom.parquet"
+    price_rows = pd.read_parquet(
+        bt_path,
+        columns=["d", "sku", "sell_price"],
+        filters=[
+            ("d", ">=", C.TEST_START),
+            ("d", "<=", C.TEST_END)
+        ]
+    )
+
+    price = price_rows.pivot(
+        index="d", columns="sku", values="sell_price"
+    ).sort_index()
+
+    price_now = price.iloc[0].fillna(price.mean()).fillna(0.5)
+
+    models = [
+        m for m in [
+            "ens_mint", "lgbm_mint", "lgbm", "prophet",
+            "snaive", "naive", "tft_avg", "tft"
+        ]
+        if (FC / f"{m}.parquet").exists()
+    ]
+
+    F = {m: load(m, "test") for m in models}
+
+    if (FC / "tft_bu.parquet").exists():
+        F["tft_bu"] = load("tft_bu", "test")
+
+    primary = "ens_mint" if "ens_mint" in models else "lgbm_mint"
+
+    if (FC / "ens.parquet").exists():
+        F["ens"] = load("ens", "test")
+
+    from m5fc.data import date_index
+    dates = date_index()
+
+    met = pd.read_csv(C.RES / "metrics_test.csv")
+
+    info = (
+        json.load(open(C.RES / "inventory_info.json"))
+        if (C.RES / "inventory_info.json").exists()
+        else {"rho": 0.2}
+    )
+
+    return dict(
+        S=S,
+        h=h,
+        models=models,
+        F=F,
+        price_now=price_now,
+        dates=dates,
+        met=met,
+        rho=info["rho"],
+        primary=primary,
+        audit=(
+            pd.read_csv(C.RES / "coherence_audit.csv")
+            if (C.RES / "coherence_audit.csv").exists()
+            else None
+        )
+    )
 
 def get_fc(m: str, node: str) -> pd.DataFrame:
     """Forecast rows for (model, node); TFT only exists at item level -> fall back to its bottom-up sum above that."""
